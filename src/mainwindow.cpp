@@ -104,10 +104,10 @@ MainWindow::MainWindow(QWidget *parent)
     udpSocket = new QUdpSocket(this);
     connect(udpSocket, &QUdpSocket::readyRead, this, &MainWindow::readPendingDatagrams);
 
-    if (!udpSocket->bind(QHostAddress::AnyIPv4, 2333)) {
-        qWarning() << "Failed to bind UDP port 2333:" << udpSocket->errorString();
+    if (!udpSocket->bind(QHostAddress::AnyIPv4, 2237)) {
+        qWarning() << "Failed to bind UDP port 2237:" << udpSocket->errorString();
     } else {
-        qDebug() << "Listening for UDP messages on port 2333";
+        // qDebug() << "Listening for UDP messages on port 2237";
     }
 }
 
@@ -121,10 +121,10 @@ void MainWindow::readPendingDatagrams()
         quint16 senderPort = 0;
         udpSocket->readDatagram(datagram.data(), datagram.size(), &sender, &senderPort);
 
-        qDebug().noquote() << "UDP datagram from"
-                           << QString("%1:%2").arg(sender.toString()).arg(senderPort)
-                           << "bytes"
-                           << datagram.size();
+        // qDebug().noquote() << "UDP datagram from"
+        //                    << QString("%1:%2").arg(sender.toString()).arg(senderPort)
+        //                    << "bytes"
+        //                    << datagram.size();
         parseMessage(datagram);
     }
 }
@@ -159,11 +159,11 @@ void MainWindow::parseMessage(QByteArray buffer)
         const QString version = readUtf8String(stream);
         const QString revision = readUtf8String(stream);
 
-        qDebug().noquote() << "Heartbeat:"
-                           << "id" << id
-                           << "maximumSchema" << maximumSchemaNumber
-                           << "version" << version
-                           << "revision" << revision;
+        // qDebug().noquote() << "Heartbeat:"
+        //                    << "id" << id
+        //                    << "maximumSchema" << maximumSchemaNumber
+        //                    << "version" << version
+        //                    << "revision" << revision;
         break;
     }
     case Status: {
@@ -196,29 +196,29 @@ void MainWindow::parseMessage(QByteArray buffer)
         const QString configurationName = readUtf8String(stream);
         const QString txMessage = readUtf8String(stream);
 
-        qDebug().noquote() << "Status:"
-                           << "id" << id
-                           << "freq" << dialFrequency
-                           << "mode" << mode
-                           << "dxCall" << dxCall
-                           << "report" << report
-                           << "txMode" << txMode
-                           << "txEnabled" << txEnabled
-                           << "transmitting" << transmitting
-                           << "decoding" << decoding
-                           << "txDf" << txDf
-                           << "rxDf" << rxDf
-                           << "call" << call
-                           << "grid" << grid
-                           << "dxGrid" << dxGrid
-                           << "txWatchdog" << txWatchdog
-                           << "subMode" << subMode
-                           << "fastMode" << fastMode
-                           << "specialOperationMode" << specialOperationMode
-                           << "frequencyTolerance" << frequencyTolerance
-                           << "trPeriod" << trPeriod
-                           << "configurationName" << configurationName
-                           << "txMessage" << txMessage;
+        // qDebug().noquote() << "Status:"
+        //                    << "id" << id
+        //                    << "freq" << dialFrequency
+        //                    << "mode" << mode
+        //                    << "dxCall" << dxCall
+        //                    << "report" << report
+        //                    << "txMode" << txMode
+        //                    << "txEnabled" << txEnabled
+        //                    << "transmitting" << transmitting
+        //                    << "decoding" << decoding
+        //                    << "txDf" << txDf
+        //                    << "rxDf" << rxDf
+        //                    << "call" << call
+        //                    << "grid" << grid
+        //                    << "dxGrid" << dxGrid
+        //                    << "txWatchdog" << txWatchdog
+        //                    << "subMode" << subMode
+        //                    << "fastMode" << fastMode
+        //                    << "specialOperationMode" << specialOperationMode
+        //                    << "frequencyTolerance" << frequencyTolerance
+        //                    << "trPeriod" << trPeriod
+        //                    << "configurationName" << configurationName
+        //                    << "txMessage" << txMessage;
         break;
     }
     case Decode: {
@@ -232,20 +232,21 @@ void MainWindow::parseMessage(QByteArray buffer)
         const QString mode = readUtf8String(stream);
         const QString message = readUtf8String(stream);
 
-        qDebug().noquote() << "Decode:"
-                           << "id" << id
-                           << "new" << isNew
-                           << "time" << time.toString("HH:mm:ss.zzz")
-                           << "snr" << snr
-                           << "dt" << deltaTime
-                           << "df" << deltaFrequency
-                           << "mode" << mode
-                           << "message" << message;
+        // qDebug().noquote() << "Decode:"
+        //                    << "id" << id
+        //                    << "new" << isNew
+        //                    << "time" << time.toString("HH:mm:ss.zzz")
+        //                    << "snr" << snr
+        //                    << "dt" << deltaTime
+        //                    << "df" << deltaFrequency
+        //                    << "mode" << mode
+        //                    << "message" << message;
+        qDebug().noquote() << message;
         break;
     }
     case Clear: {
         const QString id = readUtf8String(stream);
-        qDebug().noquote() << "Clear:" << "id" << id;
+        // qDebug().noquote() << "Clear:" << "id" << id;
         break;
     }
     case QSOLogged: {
@@ -271,41 +272,41 @@ void MainWindow::parseMessage(QByteArray buffer)
         const QString exchangeReceived = readUtf8String(stream);
         const QString adifPropagationMode = readUtf8String(stream);
 
-        qDebug().noquote() << "QSOLogged:"
-                           << "id" << id
-                           << "dateTimeOff" << dateTimeOff.toString(Qt::ISODate)
-                           << "dxCall" << dxCall
-                           << "dxGrid" << dxGrid
-                           << "txFrequency" << txFrequency
-                           << "mode" << mode
-                           << "reportSent" << reportSent
-                           << "reportReceived" << reportReceived
-                           << "txPower" << txPower
-                           << "comments" << comments
-                           << "name" << name
-                           << "dateTimeOn" << dateTimeOn.toString(Qt::ISODate)
-                           << "operatorCall" << operatorCall
-                           << "myCall" << myCall
-                           << "myGrid" << myGrid
-                           << "exchangeSent" << exchangeSent
-                           << "exchangeReceived" << exchangeReceived
-                           << "adifPropagationMode" << adifPropagationMode;
+        // qDebug().noquote() << "QSOLogged:"
+        //                    << "id" << id
+        //                    << "dateTimeOff" << dateTimeOff.toString(Qt::ISODate)
+        //                    << "dxCall" << dxCall
+        //                    << "dxGrid" << dxGrid
+        //                    << "txFrequency" << txFrequency
+        //                    << "mode" << mode
+        //                    << "reportSent" << reportSent
+        //                    << "reportReceived" << reportReceived
+        //                    << "txPower" << txPower
+        //                    << "comments" << comments
+        //                    << "name" << name
+        //                    << "dateTimeOn" << dateTimeOn.toString(Qt::ISODate)
+        //                    << "operatorCall" << operatorCall
+        //                    << "myCall" << myCall
+        //                    << "myGrid" << myGrid
+        //                    << "exchangeSent" << exchangeSent
+        //                    << "exchangeReceived" << exchangeReceived
+        //                    << "adifPropagationMode" << adifPropagationMode;
         break;
     }
     case Close: {
         const QString id = readUtf8String(stream);
-        qDebug().noquote() << "Close:" << "id" << id;
+        // qDebug().noquote() << "Close:" << "id" << id;
         break;
     }
     case LoggedADIF: {
         const QString id = readUtf8String(stream);
         const QString text = readUtf8String(stream);
-        qDebug().noquote() << "LoggedADIF:" << "id" << id << "text" << text;
+        // qDebug().noquote() << "LoggedADIF:" << "id" << id << "text" << text;
         break;
     }
     default:
-        qDebug().noquote() << "UDP message type" << messageTypeName(messageType)
-                           << "is not parsed yet";
+        // qDebug().noquote() << "UDP message type" << messageTypeName(messageType)
+        //                    << "is not parsed yet";
         break;
     }
 }
