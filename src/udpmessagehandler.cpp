@@ -422,12 +422,16 @@ void UdpMessageHandler::parseMessage(QByteArray buffer, const QHostAddress &send
         const QString exchangeReceived = readUtf8String(stream);
         const QString adifPropagationMode = readUtf8String(stream);
 
+        emit qsoLoggedReceived(bandFromFrequency(txFrequency),
+                              txFrequency,
+                              mode,
+                              dateTimeOff.date().toString("yyyy-MM-dd"),
+                              dateTimeOff.time().toString("HH:mm:ss"),
+                              dxCall,
+                              myGrid,
+                              dxGrid);
+
         Q_UNUSED(id);
-        Q_UNUSED(dateTimeOff);
-        Q_UNUSED(dxCall);
-        Q_UNUSED(dxGrid);
-        Q_UNUSED(txFrequency);
-        Q_UNUSED(mode);
         Q_UNUSED(reportSent);
         Q_UNUSED(reportReceived);
         Q_UNUSED(txPower);
@@ -436,7 +440,6 @@ void UdpMessageHandler::parseMessage(QByteArray buffer, const QHostAddress &send
         Q_UNUSED(dateTimeOn);
         Q_UNUSED(operatorCall);
         Q_UNUSED(myCall);
-        Q_UNUSED(myGrid);
         Q_UNUSED(exchangeSent);
         Q_UNUSED(exchangeReceived);
         Q_UNUSED(adifPropagationMode);

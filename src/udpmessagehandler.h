@@ -36,6 +36,14 @@ signals:
                               quint32 deltaFrequency,
                               const QString &mode,
                               bool lowConfidence);
+    void qsoLoggedReceived(const QString &band,
+                           quint64 frequency,
+                           const QString &mode,
+                           const QString &date,
+                           const QString &time,
+                           const QString &callsign,
+                           const QString &sentGrid,
+                           const QString &receivedGrid);
 
 private slots:
     void readPendingDatagrams();

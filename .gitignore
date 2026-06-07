@@ -10,3 +10,4 @@ CMakeCache.txt
 *.dll
 *.pdb
 .qtcreator/
+alertvibe.db

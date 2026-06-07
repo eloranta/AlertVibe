@@ -14,6 +14,7 @@
 #include <QSqlTableModel>
 #include <QStyle>
 #include <QStyledItemDelegate>
+#include <QTabWidget>
 #include <QTableView>
 #include <QTime>
 
@@ -63,21 +64,22 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle("AlertVibe");
     resize(900, 600);
     setUpDatabase();
-    setUpTableView();
+    setUpTableViews();
 
     udpMessageHandler = new UdpMessageHandler(this);
     connect(udpMessageHandler,
             &UdpMessageHandler::decodeRecordReceived,
             this,
             &MainWindow::addDecodeRecord);
+    connect(udpMessageHandler,
+            &UdpMessageHandler::qsoLoggedReceived,
+            this,
+            &MainWindow::addLoggedQsoRecord);
     connect(decodeTableView, &QTableView::clicked, this, &MainWindow::handleTableClicked);
 }
 
 MainWindow::~MainWindow()
 {
-    delete decodeModel;
-    delete decodeTableView;
-
     if (database != nullptr) {
         const QString connectionName = database->connectionName();
         if (database->isOpen()) {
@@ -91,14 +93,14 @@ MainWindow::~MainWindow()
 void MainWindow::setUpDatabase()
 {
     database = new QSqlDatabase(QSqlDatabase::addDatabase("QSQLITE", kConnectionName));
-    database->setDatabaseName(":memory:");
+    database->setDatabaseName("C:/ZOWN/AlertVibe/alertvibe.db");
 
     if (!database->open()) {
         qFatal("Failed to open SQLite database: %s", qPrintable(database->lastError().text()));
     }
 
     QSqlQuery query(*database);
-    if (!query.exec("CREATE TABLE decodes ("
+    if (!query.exec("CREATE TABLE IF NOT EXISTS decodes ("
                     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                     "time TEXT NOT NULL,"
                     "band TEXT,"
@@ -114,9 +116,22 @@ void MainWindow::setUpDatabase()
                     "low_confidence INTEGER NOT NULL)")) {
         qFatal("Failed to create decodes table: %s", qPrintable(query.lastError().text()));
     }
+
+    if (!query.exec("CREATE TABLE IF NOT EXISTS logged_qsos ("
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    "band TEXT,"
+                    "frequency INTEGER NOT NULL,"
+                    "mode TEXT NOT NULL,"
+                    "date TEXT NOT NULL,"
+                    "time TEXT NOT NULL,"
+                    "callsign TEXT NOT NULL,"
+                    "sent_grid TEXT,"
+                    "received_grid TEXT)")) {
+        qFatal("Failed to create logged_qsos table: %s", qPrintable(query.lastError().text()));
+    }
 }
 
-void MainWindow::setUpTableView()
+void MainWindow::setUpTableViews()
 {
     decodeModel = new QSqlTableModel(this, *database);
     decodeModel->setTable("decodes");
@@ -148,7 +163,37 @@ void MainWindow::setUpTableView()
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("mode"), true);
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("low_confidence"), true);
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("time_value"), true);
-    setCentralWidget(decodeTableView);
+
+    logModel = new QSqlTableModel(this, *database);
+    logModel->setTable("logged_qsos");
+    logModel->setEditStrategy(QSqlTableModel::OnManualSubmit);
+    logModel->setSort(logModel->fieldIndex("id"), Qt::DescendingOrder);
+    logModel->select();
+    logModel->removeColumn(logModel->fieldIndex("id"));
+    logModel->setHeaderData(0, Qt::Horizontal, "Band");
+    logModel->setHeaderData(1, Qt::Horizontal, "Freq");
+    logModel->setHeaderData(2, Qt::Horizontal, "Mode");
+    logModel->setHeaderData(3, Qt::Horizontal, "Date");
+    logModel->setHeaderData(4, Qt::Horizontal, "Time");
+    logModel->setHeaderData(5, Qt::Horizontal, "Call");
+    logModel->setHeaderData(6, Qt::Horizontal, "Sent Grid");
+    logModel->setHeaderData(7, Qt::Horizontal, "Rcvd Grid");
+
+    logTableView = new QTableView(this);
+    logTableView->setModel(logModel);
+    logTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    logTableView->setSelectionMode(QAbstractItemView::SingleSelection);
+    logTableView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    logTableView->setAlternatingRowColors(true);
+    logTableView->setSortingEnabled(false);
+    logTableView->verticalHeader()->setVisible(false);
+    logTableView->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    logTableView->horizontalHeader()->setStretchLastSection(true);
+
+    tabWidget = new QTabWidget(this);
+    tabWidget->addTab(decodeTableView, "Decodes");
+    tabWidget->addTab(logTableView, "Log");
+    setCentralWidget(tabWidget);
 }
 
 void MainWindow::clearDecodeRecords()
@@ -161,6 +206,39 @@ void MainWindow::clearDecodeRecords()
 
     currentPeriodTimeValue = -1;
     decodeModel->select();
+}
+
+void MainWindow::addLoggedQsoRecord(const QString &band,
+                                    quint64 frequency,
+                                    const QString &mode,
+                                    const QString &date,
+                                    const QString &time,
+                                    const QString &callsign,
+                                    const QString &sentGrid,
+                                    const QString &receivedGrid)
+{
+    QSqlRecord record = logModel->record();
+    record.setValue("band", band);
+    record.setValue("frequency", qulonglong(frequency));
+    record.setValue("mode", mode);
+    record.setValue("date", date);
+    record.setValue("time", time);
+    record.setValue("callsign", callsign);
+    record.setValue("sent_grid", sentGrid);
+    record.setValue("received_grid", receivedGrid);
+
+    if (!logModel->insertRecord(0, record)) {
+        qWarning() << "Failed to insert logged QSO:" << logModel->lastError().text();
+        return;
+    }
+
+    if (!logModel->submitAll()) {
+        qWarning() << "Failed to submit logged QSO:" << logModel->lastError().text();
+        logModel->revertAll();
+        return;
+    }
+
+    logModel->select();
 }
 
 void MainWindow::addDecodeRecord(const QString &wsjtId,
