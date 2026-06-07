@@ -2,7 +2,7 @@
 
 #include <QMainWindow>
 
-class QUdpSocket;
+class UdpMessageHandler;
 
 class MainWindow final : public QMainWindow
 {
@@ -11,11 +11,6 @@ class MainWindow final : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 
-private slots:
-    void readPendingDatagrams();
-
 private:
-    void parseMessage(QByteArray buffer);
-
-    QUdpSocket *udpSocket = nullptr;
+    UdpMessageHandler *udpMessageHandler = nullptr;
 };

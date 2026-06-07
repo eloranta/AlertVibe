@@ -13,6 +13,8 @@ qt_add_executable(AlertVibe
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
+    src/udpmessagehandler.cpp
+    src/udpmessagehandler.h
 )
 
 target_link_libraries(AlertVibe PRIVATE Qt6::Network Qt6::Widgets)
