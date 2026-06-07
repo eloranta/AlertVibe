@@ -26,6 +26,11 @@ bool isCqMessage(const QString &message)
     return normalized == "CQ" || normalized.startsWith("CQ ");
 }
 
+bool containsMyCall(const QString &message)
+{
+    return message.contains("OG3Z", Qt::CaseInsensitive);
+}
+
 class CqHighlightDelegate final : public QStyledItemDelegate
 {
 public:
@@ -39,7 +44,10 @@ public:
         initStyleOption(&paintedOption, index);
         const QModelIndex messageIndex = index.model()->index(index.row(), 3, index.parent());
         const QString message = messageIndex.data().toString();
-        if (isCqMessage(message) && !(paintedOption.state & QStyle::State_Selected)) {
+        if (!(paintedOption.state & QStyle::State_Selected) && containsMyCall(message)) {
+            painter->fillRect(paintedOption.rect, QColor(255, 199, 206));
+            paintedOption.backgroundBrush = Qt::NoBrush;
+        } else if (isCqMessage(message) && !(paintedOption.state & QStyle::State_Selected)) {
             painter->fillRect(paintedOption.rect, QColor(198, 239, 206));
             paintedOption.backgroundBrush = Qt::NoBrush;
         }
