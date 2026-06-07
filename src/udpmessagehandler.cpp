@@ -6,6 +6,7 @@
 #include <QDebug>
 #include <QHostAddress>
 #include <QIODevice>
+#include <QHash>
 #include <QRegularExpression>
 #include <QString>
 #include <QStringList>
@@ -38,6 +39,23 @@ struct ParsedDecodeMessage
     QString callsign;
     QString grid;
 };
+
+struct ClientEndpoint
+{
+    QHostAddress address;
+    quint16 port = 0;
+};
+
+QHash<QString, ClientEndpoint> clientEndpoints;
+
+void writeUtf8String(QDataStream &stream, const QString &value)
+{
+    const QByteArray bytes = value.toUtf8();
+    stream << quint32(bytes.size());
+    if (!bytes.isEmpty()) {
+        stream.writeRawData(bytes.constData(), bytes.size());
+    }
+}
 
 QString readUtf8String(QDataStream &stream)
 {
@@ -154,6 +172,51 @@ UdpMessageHandler::UdpMessageHandler(QObject *parent)
     }
 }
 
+bool UdpMessageHandler::startQso(const QString &wsjtId,
+                                 const QTime &time,
+                                 qint32 snr,
+                                 double deltaTime,
+                                 quint32 deltaFrequency,
+                                 const QString &mode,
+                                 const QString &message,
+                                 bool lowConfidence)
+{
+    const auto endpoint = clientEndpoints.constFind(wsjtId);
+    if (endpoint == clientEndpoints.constEnd()) {
+        qWarning() << "No WSJT-X endpoint known for id" << wsjtId;
+        return false;
+    }
+
+    const QString normalizedMessage = message.simplified().toUpper();
+    if (!(normalizedMessage == "CQ" || normalizedMessage.startsWith("CQ ")
+          || normalizedMessage == "QRZ" || normalizedMessage.startsWith("QRZ "))) {
+        qWarning() << "WSJT-X Reply requires a prior CQ or QRZ decode:" << message;
+        return false;
+    }
+
+    QByteArray datagram;
+    QDataStream stream(&datagram, QIODevice::WriteOnly);
+    stream << quint32(0xadbccbda);
+    stream << quint32(2);
+    stream << quint32(Reply);
+    writeUtf8String(stream, wsjtId);
+    stream << time << snr << deltaTime << deltaFrequency;
+    writeUtf8String(stream, mode);
+    writeUtf8String(stream, message);
+    stream << lowConfidence;
+    stream << quint8(0x00);
+
+    const qint64 bytesWritten = udpSocket->writeDatagram(datagram, endpoint->address, endpoint->port);
+    if (bytesWritten != datagram.size()) {
+        qWarning() << "Failed to send WSJT-X reply:" << udpSocket->errorString();
+        return false;
+    }
+
+    qDebug().noquote() << "Sent WSJT-X reply to" << endpoint->address.toString()
+                       << endpoint->port << message;
+    return true;
+}
+
 void UdpMessageHandler::readPendingDatagrams()
 {
     while (udpSocket->hasPendingDatagrams()) {
@@ -168,11 +231,11 @@ void UdpMessageHandler::readPendingDatagrams()
         //                    << QString("%1:%2").arg(sender.toString()).arg(senderPort)
         //                    << "bytes"
         //                    << datagram.size();
-        parseMessage(datagram);
+        parseMessage(datagram, sender, senderPort);
     }
 }
 
-void UdpMessageHandler::parseMessage(QByteArray buffer)
+void UdpMessageHandler::parseMessage(QByteArray buffer, const QHostAddress &sender, quint16 senderPort)
 {
     QDataStream stream(&buffer, QIODevice::ReadOnly);
 
@@ -201,6 +264,7 @@ void UdpMessageHandler::parseMessage(QByteArray buffer)
         stream >> maximumSchemaNumber;
         const QString version = readUtf8String(stream);
         const QString revision = readUtf8String(stream);
+        clientEndpoints.insert(id, {sender, senderPort});
 
         Q_UNUSED(id);
         Q_UNUSED(maximumSchemaNumber);
@@ -210,6 +274,7 @@ void UdpMessageHandler::parseMessage(QByteArray buffer)
     }
     case Status: {
         const QString id = readUtf8String(stream);
+        clientEndpoints.insert(id, {sender, senderPort});
         quint64 dialFrequency = 0;
         stream >> dialFrequency;
         const QString mode = readUtf8String(stream);
@@ -264,6 +329,7 @@ void UdpMessageHandler::parseMessage(QByteArray buffer)
     }
     case Decode: {
         const QString id = readUtf8String(stream);
+        clientEndpoints.insert(id, {sender, senderPort});
         bool isNew = false;
         QTime time;
         qint32 snr = 0;
@@ -272,14 +338,29 @@ void UdpMessageHandler::parseMessage(QByteArray buffer)
         stream >> isNew >> time >> snr >> deltaTime >> deltaFrequency;
         const QString mode = readUtf8String(stream);
         const QString message = readUtf8String(stream);
+        bool lowConfidence = false;
+        bool offAir = false;
+        if (!stream.atEnd()) {
+            stream >> lowConfidence;
+        }
+        if (!stream.atEnd()) {
+            stream >> offAir;
+        }
         const ParsedDecodeMessage parsed = parseDecodedText(message);
 
         Q_UNUSED(id);
         Q_UNUSED(isNew);
-        Q_UNUSED(snr);
-        Q_UNUSED(deltaTime);
-        Q_UNUSED(deltaFrequency);
-        emit decodeRecordReceived(time, parsed.callsign, parsed.grid, message);
+        Q_UNUSED(offAir);
+        emit decodeRecordReceived(id,
+                                  time,
+                                  parsed.callsign,
+                                  parsed.grid,
+                                  message,
+                                  snr,
+                                  deltaTime,
+                                  deltaFrequency,
+                                  mode,
+                                  lowConfidence);
         qDebug().noquote() << time
                            << parsed.callsign
                            << parsed.grid

@@ -5,6 +5,7 @@
 class QSqlDatabase;
 class QSqlTableModel;
 class QTableView;
+class QModelIndex;
 class QString;
 class QTime;
 class UdpMessageHandler;
@@ -20,13 +21,22 @@ public:
 private:
     void setUpDatabase();
     void setUpTableView();
-    void addDecodeRecord(const QTime &time,
+    void clearDecodeRecords();
+    void addDecodeRecord(const QString &wsjtId,
+                         const QTime &time,
                          const QString &callsign,
                          const QString &grid,
-                         const QString &message);
+                         const QString &message,
+                         qint32 snr,
+                         double deltaTime,
+                         quint32 deltaFrequency,
+                         const QString &mode,
+                         bool lowConfidence);
+    void handleTableClicked(const QModelIndex &index);
 
     QSqlDatabase *database = nullptr;
     QSqlTableModel *decodeModel = nullptr;
     QTableView *decodeTableView = nullptr;
     UdpMessageHandler *udpMessageHandler = nullptr;
+    int currentPeriodTimeValue = -1;
 };

@@ -4,6 +4,7 @@
 #include <QAbstractItemView>
 #include <QDebug>
 #include <QHeaderView>
+#include <QModelIndex>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -29,6 +30,7 @@ MainWindow::MainWindow(QWidget *parent)
             &UdpMessageHandler::decodeRecordReceived,
             this,
             &MainWindow::addDecodeRecord);
+    connect(decodeTableView, &QTableView::clicked, this, &MainWindow::handleTableClicked);
 }
 
 MainWindow::~MainWindow()
@@ -61,7 +63,14 @@ void MainWindow::setUpDatabase()
                     "time TEXT NOT NULL,"
                     "callsign TEXT,"
                     "grid TEXT,"
-                    "message TEXT NOT NULL)")) {
+                    "message TEXT NOT NULL,"
+                    "time_value INTEGER NOT NULL,"
+                    "wsjt_id TEXT NOT NULL,"
+                    "snr INTEGER NOT NULL,"
+                    "delta_time REAL NOT NULL,"
+                    "delta_frequency INTEGER NOT NULL,"
+                    "mode TEXT NOT NULL,"
+                    "low_confidence INTEGER NOT NULL)")) {
         qFatal("Failed to create decodes table: %s", qPrintable(query.lastError().text()));
     }
 }
@@ -89,19 +98,57 @@ void MainWindow::setUpTableView()
     decodeTableView->verticalHeader()->setVisible(false);
     decodeTableView->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     decodeTableView->horizontalHeader()->setStretchLastSection(true);
+    decodeTableView->setColumnHidden(decodeModel->fieldIndex("wsjt_id"), true);
+    decodeTableView->setColumnHidden(decodeModel->fieldIndex("snr"), true);
+    decodeTableView->setColumnHidden(decodeModel->fieldIndex("delta_time"), true);
+    decodeTableView->setColumnHidden(decodeModel->fieldIndex("delta_frequency"), true);
+    decodeTableView->setColumnHidden(decodeModel->fieldIndex("mode"), true);
+    decodeTableView->setColumnHidden(decodeModel->fieldIndex("low_confidence"), true);
+    decodeTableView->setColumnHidden(decodeModel->fieldIndex("time_value"), true);
     setCentralWidget(decodeTableView);
 }
 
-void MainWindow::addDecodeRecord(const QTime &time,
+void MainWindow::clearDecodeRecords()
+{
+    QSqlQuery query(*database);
+    if (!query.exec("DELETE FROM decodes")) {
+        qWarning() << "Failed to clear decode records:" << query.lastError().text();
+        return;
+    }
+
+    currentPeriodTimeValue = -1;
+    decodeModel->select();
+}
+
+void MainWindow::addDecodeRecord(const QString &wsjtId,
+                                 const QTime &time,
                                  const QString &callsign,
                                  const QString &grid,
-                                 const QString &message)
+                                 const QString &message,
+                                 qint32 snr,
+                                 double deltaTime,
+                                 quint32 deltaFrequency,
+                                 const QString &mode,
+                                 bool lowConfidence)
 {
+    const int timeValue = time.msecsSinceStartOfDay();
+    if (currentPeriodTimeValue != -1 && currentPeriodTimeValue != timeValue) {
+        clearDecodeRecords();
+    }
+    currentPeriodTimeValue = timeValue;
+
     QSqlRecord record = decodeModel->record();
     record.setValue("time", time.toString("HH:mm:ss"));
+    record.setValue("time_value", timeValue);
     record.setValue("callsign", callsign);
     record.setValue("grid", grid);
     record.setValue("message", message);
+    record.setValue("wsjt_id", wsjtId);
+    record.setValue("snr", snr);
+    record.setValue("delta_time", deltaTime);
+    record.setValue("delta_frequency", deltaFrequency);
+    record.setValue("mode", mode);
+    record.setValue("low_confidence", lowConfidence ? 1 : 0);
 
     if (!decodeModel->insertRecord(0, record)) {
         qWarning() << "Failed to insert decode record:" << decodeModel->lastError().text();
@@ -115,4 +162,32 @@ void MainWindow::addDecodeRecord(const QTime &time,
     }
 
     decodeModel->select();
+}
+
+void MainWindow::handleTableClicked(const QModelIndex &index)
+{
+    if (!index.isValid() || index.column() != 1) {
+        return;
+    }
+
+    const QSqlRecord record = decodeModel->record(index.row());
+    const QString wsjtId = record.value("wsjt_id").toString();
+    const QTime time = QTime::fromMSecsSinceStartOfDay(record.value("time_value").toInt());
+    const qint32 snr = record.value("snr").toInt();
+    const double deltaTime = record.value("delta_time").toDouble();
+    const quint32 deltaFrequency = record.value("delta_frequency").toUInt();
+    const QString mode = record.value("mode").toString();
+    const QString message = record.value("message").toString();
+    const bool lowConfidence = record.value("low_confidence").toBool();
+
+    if (!udpMessageHandler->startQso(wsjtId,
+                                     time,
+                                     snr,
+                                     deltaTime,
+                                     deltaFrequency,
+                                     mode,
+                                     message,
+                                     lowConfidence)) {
+        qWarning() << "Failed to start QSO for" << record.value("callsign").toString();
+    }
 }
