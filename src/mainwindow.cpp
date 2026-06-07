@@ -194,24 +194,31 @@ public:
 protected:
     bool lessThan(const QModelIndex &sourceLeft, const QModelIndex &sourceRight) const override
     {
-        const int leftPriority = rowPriority(sourceLeft.row());
-        const int rightPriority = rowPriority(sourceRight.row());
+        const auto *sqlModel = qobject_cast<QSqlTableModel *>(sourceModel());
+        if (sqlModel == nullptr) {
+            return sourceLeft.row() < sourceRight.row();
+        }
+
+        const QSqlRecord leftRecord = sqlModel->record(sourceLeft.row());
+        const QSqlRecord rightRecord = sqlModel->record(sourceRight.row());
+        const int leftPriority = rowPriority(leftRecord);
+        const int rightPriority = rowPriority(rightRecord);
         if (leftPriority != rightPriority) {
             return leftPriority < rightPriority;
+        }
+
+        const int leftDistance = leftRecord.value("distance_km").toInt();
+        const int rightDistance = rightRecord.value("distance_km").toInt();
+        if (leftDistance != rightDistance) {
+            return leftDistance > rightDistance;
         }
 
         return sourceLeft.row() < sourceRight.row();
     }
 
 private:
-    int rowPriority(int row) const
+    int rowPriority(const QSqlRecord &record) const
     {
-        const auto *sqlModel = qobject_cast<QSqlTableModel *>(sourceModel());
-        if (sqlModel == nullptr) {
-            return 2;
-        }
-
-        const QSqlRecord record = sqlModel->record(row);
         const QString band = record.value("band").toString();
         const QString callsign = record.value("callsign").toString();
         const QString message = record.value("message").toString();
