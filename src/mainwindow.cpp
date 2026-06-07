@@ -32,10 +32,31 @@ bool containsMyCall(const QString &message)
     return message.contains("OG3Z", Qt::CaseInsensitive);
 }
 
-class CqHighlightDelegate final : public QStyledItemDelegate
+bool isLoggedQsoInModel(QSqlTableModel *logModel, const QString &band, const QString &callsign)
+{
+    if (logModel == nullptr || band.isEmpty() || callsign.isEmpty()) {
+        return false;
+    }
+
+    for (int row = 0; row < logModel->rowCount(); ++row) {
+        const QSqlRecord record = logModel->record(row);
+        if (record.value("band").toString().compare(band, Qt::CaseInsensitive) == 0
+            && record.value("callsign").toString().compare(callsign, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+class DecodeRowDelegate final : public QStyledItemDelegate
 {
 public:
-    using QStyledItemDelegate::QStyledItemDelegate;
+    explicit DecodeRowDelegate(QSqlTableModel *logModel, QObject *parent = nullptr)
+        : QStyledItemDelegate(parent)
+        , m_logModel(logModel)
+    {
+    }
 
     void paint(QPainter *painter,
                const QStyleOptionViewItem &option,
@@ -43,9 +64,17 @@ public:
     {
         QStyleOptionViewItem paintedOption(option);
         initStyleOption(&paintedOption, index);
+        const QModelIndex bandIndex = index.model()->index(index.row(), 1, index.parent());
+        const QModelIndex callsignIndex = index.model()->index(index.row(), 2, index.parent());
         const QModelIndex messageIndex = index.model()->index(index.row(), 4, index.parent());
+        const QString band = bandIndex.data().toString();
+        const QString callsign = callsignIndex.data().toString();
         const QString message = messageIndex.data().toString();
-        if (!(paintedOption.state & QStyle::State_Selected) && containsMyCall(message)) {
+        if (!(paintedOption.state & QStyle::State_Selected) && isLoggedQsoInModel(m_logModel, band, callsign)) {
+            painter->fillRect(paintedOption.rect, QColor(217, 217, 217));
+            paintedOption.backgroundBrush = Qt::NoBrush;
+            paintedOption.palette.setColor(QPalette::Text, QColor(96, 96, 96));
+        } else if (!(paintedOption.state & QStyle::State_Selected) && containsMyCall(message)) {
             painter->fillRect(paintedOption.rect, QColor(255, 199, 206));
             paintedOption.backgroundBrush = Qt::NoBrush;
         } else if (isCqMessage(message) && !(paintedOption.state & QStyle::State_Selected)) {
@@ -55,6 +84,9 @@ public:
 
         QStyledItemDelegate::paint(painter, paintedOption, index);
     }
+
+private:
+    QSqlTableModel *m_logModel = nullptr;
 };
 }
 
@@ -133,6 +165,21 @@ void MainWindow::setUpDatabase()
 
 void MainWindow::setUpTableViews()
 {
+    logModel = new QSqlTableModel(this, *database);
+    logModel->setTable("logged_qsos");
+    logModel->setEditStrategy(QSqlTableModel::OnManualSubmit);
+    logModel->setSort(logModel->fieldIndex("id"), Qt::DescendingOrder);
+    logModel->select();
+    logModel->removeColumn(logModel->fieldIndex("id"));
+    logModel->setHeaderData(0, Qt::Horizontal, "Band");
+    logModel->setHeaderData(1, Qt::Horizontal, "Freq");
+    logModel->setHeaderData(2, Qt::Horizontal, "Mode");
+    logModel->setHeaderData(3, Qt::Horizontal, "Date");
+    logModel->setHeaderData(4, Qt::Horizontal, "Time");
+    logModel->setHeaderData(5, Qt::Horizontal, "Call");
+    logModel->setHeaderData(6, Qt::Horizontal, "Sent Grid");
+    logModel->setHeaderData(7, Qt::Horizontal, "Rcvd Grid");
+
     decodeModel = new QSqlTableModel(this, *database);
     decodeModel->setTable("decodes");
     decodeModel->setEditStrategy(QSqlTableModel::OnManualSubmit);
@@ -147,7 +194,7 @@ void MainWindow::setUpTableViews()
 
     decodeTableView = new QTableView(this);
     decodeTableView->setModel(decodeModel);
-    decodeTableView->setItemDelegate(new CqHighlightDelegate(decodeTableView));
+    decodeTableView->setItemDelegate(new DecodeRowDelegate(logModel, decodeTableView));
     decodeTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     decodeTableView->setSelectionMode(QAbstractItemView::SingleSelection);
     decodeTableView->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -164,21 +211,6 @@ void MainWindow::setUpTableViews()
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("low_confidence"), true);
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("time_value"), true);
 
-    logModel = new QSqlTableModel(this, *database);
-    logModel->setTable("logged_qsos");
-    logModel->setEditStrategy(QSqlTableModel::OnManualSubmit);
-    logModel->setSort(logModel->fieldIndex("id"), Qt::DescendingOrder);
-    logModel->select();
-    logModel->removeColumn(logModel->fieldIndex("id"));
-    logModel->setHeaderData(0, Qt::Horizontal, "Band");
-    logModel->setHeaderData(1, Qt::Horizontal, "Freq");
-    logModel->setHeaderData(2, Qt::Horizontal, "Mode");
-    logModel->setHeaderData(3, Qt::Horizontal, "Date");
-    logModel->setHeaderData(4, Qt::Horizontal, "Time");
-    logModel->setHeaderData(5, Qt::Horizontal, "Call");
-    logModel->setHeaderData(6, Qt::Horizontal, "Sent Grid");
-    logModel->setHeaderData(7, Qt::Horizontal, "Rcvd Grid");
-
     logTableView = new QTableView(this);
     logTableView->setModel(logModel);
     logTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -194,6 +226,11 @@ void MainWindow::setUpTableViews()
     tabWidget->addTab(decodeTableView, "Decodes");
     tabWidget->addTab(logTableView, "Log");
     setCentralWidget(tabWidget);
+}
+
+bool MainWindow::isLoggedQso(const QString &band, const QString &callsign) const
+{
+    return isLoggedQsoInModel(logModel, band, callsign);
 }
 
 void MainWindow::clearDecodeRecords()
@@ -239,6 +276,7 @@ void MainWindow::addLoggedQsoRecord(const QString &band,
     }
 
     logModel->select();
+    decodeTableView->viewport()->update();
 }
 
 void MainWindow::addDecodeRecord(const QString &wsjtId,
@@ -294,6 +332,13 @@ void MainWindow::handleTableClicked(const QModelIndex &index)
     }
 
     const QSqlRecord record = decodeModel->record(index.row());
+    const QString band = record.value("band").toString();
+    const QString callsign = record.value("callsign").toString();
+    if (isLoggedQso(band, callsign)) {
+        qWarning() << "QSO already logged for" << callsign << "on" << band;
+        return;
+    }
+
     const QString wsjtId = record.value("wsjt_id").toString();
     const QTime time = QTime::fromMSecsSinceStartOfDay(record.value("time_value").toInt());
     const qint32 snr = record.value("snr").toInt();
@@ -311,6 +356,6 @@ void MainWindow::handleTableClicked(const QModelIndex &index)
                                      mode,
                                      message,
                                      lowConfidence)) {
-        qWarning() << "Failed to start QSO for" << record.value("callsign").toString();
+        qWarning() << "Failed to start QSO for" << callsign;
     }
 }

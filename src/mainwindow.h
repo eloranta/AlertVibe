@@ -20,6 +20,7 @@ public:
     ~MainWindow() override;
 
 private:
+    bool isLoggedQso(const QString &band, const QString &callsign) const;
     void setUpDatabase();
     void setUpTableViews();
     void clearDecodeRecords();
