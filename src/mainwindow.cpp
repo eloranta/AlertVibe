@@ -7,6 +7,7 @@
 #include <QHeaderView>
 #include <QModelIndex>
 #include <QPainter>
+#include <QRegularExpression>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -18,9 +19,90 @@
 #include <QTabWidget>
 #include <QTableView>
 #include <QTime>
+#include <QtMath>
 
 namespace {
 constexpr auto kConnectionName = "AlertVibeConnection";
+constexpr auto kMyGrid = "KP11";
+constexpr double kEarthRadiusKm = 6371.0;
+
+bool ensureColumnExists(QSqlDatabase &database,
+                        const QString &tableName,
+                        const QString &columnName,
+                        const QString &columnDefinition)
+{
+    QSqlQuery query(database);
+    if (!query.exec(QString("PRAGMA table_info(%1)").arg(tableName))) {
+        qWarning() << "Failed to inspect table" << tableName << ":" << query.lastError().text();
+        return false;
+    }
+
+    while (query.next()) {
+        if (query.value("name").toString().compare(columnName, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+
+    QSqlQuery alterQuery(database);
+    if (!alterQuery.exec(QString("ALTER TABLE %1 ADD COLUMN %2 %3")
+                             .arg(tableName, columnName, columnDefinition))) {
+        qWarning() << "Failed to add column" << columnName << "to" << tableName << ":"
+                   << alterQuery.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
+bool maidenheadToLatLon(const QString &grid, double &latitude, double &longitude)
+{
+    const QString normalized = grid.trimmed().toUpper();
+    static const QRegularExpression gridPattern("^[A-R]{2}[0-9]{2}(?:[A-X]{2})?$");
+    if (!gridPattern.match(normalized).hasMatch()) {
+        return false;
+    }
+
+    longitude = (normalized[0].unicode() - 'A') * 20.0 - 180.0;
+    latitude = (normalized[1].unicode() - 'A') * 10.0 - 90.0;
+    longitude += (normalized[2].unicode() - '0') * 2.0;
+    latitude += (normalized[3].unicode() - '0') * 1.0;
+
+    double lonWidth = 2.0;
+    double latHeight = 1.0;
+    if (normalized.size() >= 6) {
+        longitude += (normalized[4].unicode() - 'A') * (5.0 / 60.0);
+        latitude += (normalized[5].unicode() - 'A') * (2.5 / 60.0);
+        lonWidth = 5.0 / 60.0;
+        latHeight = 2.5 / 60.0;
+    }
+
+    longitude += lonWidth / 2.0;
+    latitude += latHeight / 2.0;
+    return true;
+}
+
+int distanceKmBetweenGrids(const QString &fromGrid, const QString &toGrid)
+{
+    double fromLat = 0.0;
+    double fromLon = 0.0;
+    double toLat = 0.0;
+    double toLon = 0.0;
+    if (!maidenheadToLatLon(fromGrid, fromLat, fromLon)
+        || !maidenheadToLatLon(toGrid, toLat, toLon)) {
+        return -1;
+    }
+
+    const double fromLatRad = qDegreesToRadians(fromLat);
+    const double fromLonRad = qDegreesToRadians(fromLon);
+    const double toLatRad = qDegreesToRadians(toLat);
+    const double toLonRad = qDegreesToRadians(toLon);
+    const double dLat = toLatRad - fromLatRad;
+    const double dLon = toLonRad - fromLonRad;
+    const double a = qPow(qSin(dLat / 2.0), 2)
+        + qCos(fromLatRad) * qCos(toLatRad) * qPow(qSin(dLon / 2.0), 2);
+    const double c = 2.0 * qAtan2(qSqrt(a), qSqrt(1.0 - a));
+    return qRound(kEarthRadiusKm * c);
+}
 
 bool isCqMessage(const QString &message)
 {
@@ -65,12 +147,22 @@ public:
     {
         QStyleOptionViewItem paintedOption(option);
         initStyleOption(&paintedOption, index);
-        const QModelIndex bandIndex = index.model()->index(index.row(), 1, index.parent());
-        const QModelIndex callsignIndex = index.model()->index(index.row(), 2, index.parent());
-        const QModelIndex messageIndex = index.model()->index(index.row(), 4, index.parent());
-        const QString band = bandIndex.data().toString();
-        const QString callsign = callsignIndex.data().toString();
-        const QString message = messageIndex.data().toString();
+        const auto *proxyModel = qobject_cast<const QSortFilterProxyModel *>(index.model());
+        const auto *sqlModel = proxyModel != nullptr
+            ? qobject_cast<const QSqlTableModel *>(proxyModel->sourceModel())
+            : qobject_cast<const QSqlTableModel *>(index.model());
+        const QModelIndex sourceIndex = proxyModel != nullptr ? proxyModel->mapToSource(index) : index;
+
+        QString band;
+        QString callsign;
+        QString message;
+        if (sqlModel != nullptr) {
+            const QSqlRecord record = sqlModel->record(sourceIndex.row());
+            band = record.value("band").toString();
+            callsign = record.value("callsign").toString();
+            message = record.value("message").toString();
+        }
+
         if (!(paintedOption.state & QStyle::State_Selected) && isLoggedQsoInModel(m_logModel, band, callsign)) {
             painter->fillRect(paintedOption.rect, QColor(217, 217, 217));
             paintedOption.backgroundBrush = Qt::NoBrush;
@@ -189,6 +281,7 @@ void MainWindow::setUpDatabase()
                     "band TEXT,"
                     "callsign TEXT,"
                     "grid TEXT,"
+                    "distance_km INTEGER,"
                     "message TEXT NOT NULL,"
                     "time_value INTEGER NOT NULL,"
                     "wsjt_id TEXT NOT NULL,"
@@ -211,6 +304,10 @@ void MainWindow::setUpDatabase()
                     "sent_grid TEXT,"
                     "received_grid TEXT)")) {
         qFatal("Failed to create logged_qsos table: %s", qPrintable(query.lastError().text()));
+    }
+
+    if (!ensureColumnExists(*database, "decodes", "distance_km", "INTEGER")) {
+        qFatal("Failed to ensure distance_km column exists");
     }
 }
 
@@ -237,11 +334,12 @@ void MainWindow::setUpTableViews()
     decodeModel->setSort(decodeModel->fieldIndex("id"), Qt::DescendingOrder);
     decodeModel->select();
     decodeModel->removeColumn(decodeModel->fieldIndex("id"));
-    decodeModel->setHeaderData(0, Qt::Horizontal, "Time");
-    decodeModel->setHeaderData(1, Qt::Horizontal, "Band");
-    decodeModel->setHeaderData(2, Qt::Horizontal, "Call");
-    decodeModel->setHeaderData(3, Qt::Horizontal, "Grid");
-    decodeModel->setHeaderData(4, Qt::Horizontal, "Message");
+    decodeModel->setHeaderData(decodeModel->fieldIndex("time"), Qt::Horizontal, "Time");
+    decodeModel->setHeaderData(decodeModel->fieldIndex("band"), Qt::Horizontal, "Band");
+    decodeModel->setHeaderData(decodeModel->fieldIndex("callsign"), Qt::Horizontal, "Call");
+    decodeModel->setHeaderData(decodeModel->fieldIndex("grid"), Qt::Horizontal, "Grid");
+    decodeModel->setHeaderData(decodeModel->fieldIndex("distance_km"), Qt::Horizontal, "Distance");
+    decodeModel->setHeaderData(decodeModel->fieldIndex("message"), Qt::Horizontal, "Message");
 
     decodeProxyModel = new DecodeSortProxyModel(logModel, this);
     decodeProxyModel->setSourceModel(decodeModel);
@@ -258,6 +356,7 @@ void MainWindow::setUpTableViews()
     decodeTableView->verticalHeader()->setVisible(false);
     decodeTableView->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     decodeTableView->horizontalHeader()->setStretchLastSection(true);
+    decodeTableView->horizontalHeader()->setSectionsMovable(true);
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("wsjt_id"), true);
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("snr"), true);
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("delta_time"), true);
@@ -265,6 +364,9 @@ void MainWindow::setUpTableViews()
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("mode"), true);
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("low_confidence"), true);
     decodeTableView->setColumnHidden(decodeModel->fieldIndex("time_value"), true);
+    decodeTableView->horizontalHeader()->moveSection(
+        decodeTableView->horizontalHeader()->visualIndex(decodeModel->fieldIndex("distance_km")),
+        decodeTableView->horizontalHeader()->visualIndex(decodeModel->fieldIndex("message")));
 
     logTableView = new QTableView(this);
     logTableView->setModel(logModel);
@@ -353,11 +455,17 @@ void MainWindow::addDecodeRecord(const QString &wsjtId,
     currentPeriodTimeValue = timeValue;
 
     QSqlRecord record = decodeModel->record();
+    const int distanceKm = distanceKmBetweenGrids(kMyGrid, grid);
     record.setValue("time", time.toString("HH:mm:ss"));
     record.setValue("band", band);
     record.setValue("time_value", timeValue);
     record.setValue("callsign", callsign);
     record.setValue("grid", grid);
+    if (distanceKm >= 0) {
+        record.setValue("distance_km", distanceKm);
+    } else {
+        record.setNull("distance_km");
+    }
     record.setValue("message", message);
     record.setValue("wsjt_id", wsjtId);
     record.setValue("snr", snr);
