@@ -135,7 +135,7 @@ bool isCallsignToken(const QString &token, bool isBracketed = false)
 
     if (!isBracketed && !token.contains('/')) {
         const int digitIndex = token.indexOf(QRegularExpression(QStringLiteral("[0-9]")));
-        if (digitIndex <= 0 || digitIndex == token.size() - 1) {
+        if (digitIndex < 0 || digitIndex == token.size() - 1) {
             return false;
         }
     }
