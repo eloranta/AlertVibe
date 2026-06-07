@@ -2,19 +2,51 @@
 #include "udpmessagehandler.h"
 
 #include <QAbstractItemView>
+#include <QColor>
 #include <QDebug>
 #include <QHeaderView>
 #include <QModelIndex>
+#include <QPainter>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QSqlRecord>
 #include <QSqlTableModel>
+#include <QStyle>
+#include <QStyledItemDelegate>
 #include <QTableView>
 #include <QTime>
 
 namespace {
 constexpr auto kConnectionName = "AlertVibeConnection";
+
+bool isCqMessage(const QString &message)
+{
+    const QString normalized = message.simplified().toUpper();
+    return normalized == "CQ" || normalized.startsWith("CQ ");
+}
+
+class CqHighlightDelegate final : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter,
+               const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem paintedOption(option);
+        initStyleOption(&paintedOption, index);
+        const QModelIndex messageIndex = index.model()->index(index.row(), 3, index.parent());
+        const QString message = messageIndex.data().toString();
+        if (isCqMessage(message) && !(paintedOption.state & QStyle::State_Selected)) {
+            painter->fillRect(paintedOption.rect, QColor(198, 239, 206));
+            paintedOption.backgroundBrush = Qt::NoBrush;
+        }
+
+        QStyledItemDelegate::paint(painter, paintedOption, index);
+    }
+};
 }
 
 MainWindow::MainWindow(QWidget *parent)
@@ -90,6 +122,7 @@ void MainWindow::setUpTableView()
 
     decodeTableView = new QTableView(this);
     decodeTableView->setModel(decodeModel);
+    decodeTableView->setItemDelegate(new CqHighlightDelegate(decodeTableView));
     decodeTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     decodeTableView->setSelectionMode(QAbstractItemView::SingleSelection);
     decodeTableView->setEditTriggers(QAbstractItemView::NoEditTriggers);
