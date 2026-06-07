@@ -42,7 +42,7 @@ public:
     {
         QStyleOptionViewItem paintedOption(option);
         initStyleOption(&paintedOption, index);
-        const QModelIndex messageIndex = index.model()->index(index.row(), 3, index.parent());
+        const QModelIndex messageIndex = index.model()->index(index.row(), 4, index.parent());
         const QString message = messageIndex.data().toString();
         if (!(paintedOption.state & QStyle::State_Selected) && containsMyCall(message)) {
             painter->fillRect(paintedOption.rect, QColor(255, 199, 206));
@@ -101,6 +101,7 @@ void MainWindow::setUpDatabase()
     if (!query.exec("CREATE TABLE decodes ("
                     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                     "time TEXT NOT NULL,"
+                    "band TEXT,"
                     "callsign TEXT,"
                     "grid TEXT,"
                     "message TEXT NOT NULL,"
@@ -124,9 +125,10 @@ void MainWindow::setUpTableView()
     decodeModel->select();
     decodeModel->removeColumn(decodeModel->fieldIndex("id"));
     decodeModel->setHeaderData(0, Qt::Horizontal, "Time");
-    decodeModel->setHeaderData(1, Qt::Horizontal, "Call");
-    decodeModel->setHeaderData(2, Qt::Horizontal, "Grid");
-    decodeModel->setHeaderData(3, Qt::Horizontal, "Message");
+    decodeModel->setHeaderData(1, Qt::Horizontal, "Band");
+    decodeModel->setHeaderData(2, Qt::Horizontal, "Call");
+    decodeModel->setHeaderData(3, Qt::Horizontal, "Grid");
+    decodeModel->setHeaderData(4, Qt::Horizontal, "Message");
 
     decodeTableView = new QTableView(this);
     decodeTableView->setModel(decodeModel);
@@ -163,6 +165,7 @@ void MainWindow::clearDecodeRecords()
 
 void MainWindow::addDecodeRecord(const QString &wsjtId,
                                  const QTime &time,
+                                 const QString &band,
                                  const QString &callsign,
                                  const QString &grid,
                                  const QString &message,
@@ -180,6 +183,7 @@ void MainWindow::addDecodeRecord(const QString &wsjtId,
 
     QSqlRecord record = decodeModel->record();
     record.setValue("time", time.toString("HH:mm:ss"));
+    record.setValue("band", band);
     record.setValue("time_value", timeValue);
     record.setValue("callsign", callsign);
     record.setValue("grid", grid);
@@ -207,7 +211,7 @@ void MainWindow::addDecodeRecord(const QString &wsjtId,
 
 void MainWindow::handleTableClicked(const QModelIndex &index)
 {
-    if (!index.isValid() || index.column() != 1) {
+    if (!index.isValid() || index.column() != 2) {
         return;
     }
 

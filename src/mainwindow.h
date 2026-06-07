@@ -24,6 +24,7 @@ private:
     void clearDecodeRecords();
     void addDecodeRecord(const QString &wsjtId,
                          const QTime &time,
+                         const QString &band,
                          const QString &callsign,
                          const QString &grid,
                          const QString &message,

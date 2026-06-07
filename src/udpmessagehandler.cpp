@@ -46,7 +46,32 @@ struct ClientEndpoint
     quint16 port = 0;
 };
 
+QHash<QString, QString> clientBands;
 QHash<QString, ClientEndpoint> clientEndpoints;
+
+QString bandFromFrequency(quint64 hz)
+{
+    if (hz >= 135700 && hz <= 137800) return "2200m";
+    if (hz >= 472000 && hz <= 479000) return "630m";
+    if (hz >= 1800000 && hz <= 2000000) return "160m";
+    if (hz >= 3500000 && hz <= 4000000) return "80m";
+    if (hz >= 5330500 && hz <= 5403500) return "60m";
+    if (hz >= 7000000 && hz <= 7300000) return "40m";
+    if (hz >= 10100000 && hz <= 10150000) return "30m";
+    if (hz >= 14000000 && hz <= 14350000) return "20m";
+    if (hz >= 18068000 && hz <= 18168000) return "17m";
+    if (hz >= 21000000 && hz <= 21450000) return "15m";
+    if (hz >= 24890000 && hz <= 24990000) return "12m";
+    if (hz >= 28000000 && hz <= 29700000) return "10m";
+    if (hz >= 50000000 && hz <= 54000000) return "6m";
+    if (hz >= 70000000 && hz <= 71000000) return "4m";
+    if (hz >= 144000000 && hz <= 148000000) return "2m";
+    if (hz >= 222000000 && hz <= 225000000) return "1.25m";
+    if (hz >= 420000000 && hz <= 450000000) return "70cm";
+    if (hz >= 902000000 && hz <= 928000000) return "33cm";
+    if (hz >= 1240000000 && hz <= 1300000000) return "23cm";
+    return {};
+}
 
 void writeUtf8String(QDataStream &stream, const QString &value)
 {
@@ -277,6 +302,7 @@ void UdpMessageHandler::parseMessage(QByteArray buffer, const QHostAddress &send
         clientEndpoints.insert(id, {sender, senderPort});
         quint64 dialFrequency = 0;
         stream >> dialFrequency;
+        clientBands.insert(id, bandFromFrequency(dialFrequency));
         const QString mode = readUtf8String(stream);
         const QString dxCall = readUtf8String(stream);
         const QString report = readUtf8String(stream);
@@ -353,6 +379,7 @@ void UdpMessageHandler::parseMessage(QByteArray buffer, const QHostAddress &send
         Q_UNUSED(offAir);
         emit decodeRecordReceived(id,
                                   time,
+                                  clientBands.value(id),
                                   parsed.callsign,
                                   parsed.grid,
                                   message,
