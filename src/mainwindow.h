@@ -4,6 +4,7 @@
 
 class QSqlDatabase;
 class QSqlTableModel;
+class QSortFilterProxyModel;
 class QTableView;
 class QTabWidget;
 class QModelIndex;
@@ -47,6 +48,7 @@ private:
 
     QSqlDatabase *database = nullptr;
     QSqlTableModel *decodeModel = nullptr;
+    QSortFilterProxyModel *decodeProxyModel = nullptr;
     QSqlTableModel *logModel = nullptr;
     QTableView *decodeTableView = nullptr;
     QTableView *logTableView = nullptr;

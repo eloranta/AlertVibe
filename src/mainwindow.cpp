@@ -12,6 +12,7 @@
 #include <QSqlQuery>
 #include <QSqlRecord>
 #include <QSqlTableModel>
+#include <QSortFilterProxyModel>
 #include <QStyle>
 #include <QStyledItemDelegate>
 #include <QTabWidget>
@@ -86,6 +87,56 @@ public:
     }
 
 private:
+    QSqlTableModel *m_logModel = nullptr;
+};
+
+class DecodeSortProxyModel final : public QSortFilterProxyModel
+{
+public:
+    explicit DecodeSortProxyModel(QSqlTableModel *logModel, QObject *parent = nullptr)
+        : QSortFilterProxyModel(parent)
+        , m_logModel(logModel)
+    {
+    }
+
+protected:
+    bool lessThan(const QModelIndex &sourceLeft, const QModelIndex &sourceRight) const override
+    {
+        const int leftPriority = rowPriority(sourceLeft.row());
+        const int rightPriority = rowPriority(sourceRight.row());
+        if (leftPriority != rightPriority) {
+            return leftPriority < rightPriority;
+        }
+
+        return sourceLeft.row() < sourceRight.row();
+    }
+
+private:
+    int rowPriority(int row) const
+    {
+        const auto *sqlModel = qobject_cast<QSqlTableModel *>(sourceModel());
+        if (sqlModel == nullptr) {
+            return 2;
+        }
+
+        const QSqlRecord record = sqlModel->record(row);
+        const QString band = record.value("band").toString();
+        const QString callsign = record.value("callsign").toString();
+        const QString message = record.value("message").toString();
+
+        if (isLoggedQsoInModel(m_logModel, band, callsign)) {
+            return 3;
+        }
+        if (containsMyCall(message)) {
+            return 0;
+        }
+        if (isCqMessage(message)) {
+            return 1;
+        }
+
+        return 2;
+    }
+
     QSqlTableModel *m_logModel = nullptr;
 };
 }
@@ -192,8 +243,13 @@ void MainWindow::setUpTableViews()
     decodeModel->setHeaderData(3, Qt::Horizontal, "Grid");
     decodeModel->setHeaderData(4, Qt::Horizontal, "Message");
 
+    decodeProxyModel = new DecodeSortProxyModel(logModel, this);
+    decodeProxyModel->setSourceModel(decodeModel);
+    decodeProxyModel->setDynamicSortFilter(true);
+    decodeProxyModel->sort(0);
+
     decodeTableView = new QTableView(this);
-    decodeTableView->setModel(decodeModel);
+    decodeTableView->setModel(decodeProxyModel);
     decodeTableView->setItemDelegate(new DecodeRowDelegate(logModel, decodeTableView));
     decodeTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     decodeTableView->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -277,6 +333,7 @@ void MainWindow::addLoggedQsoRecord(const QString &band,
 
     logModel->select();
     decodeTableView->viewport()->update();
+    decodeProxyModel->sort(0);
 }
 
 void MainWindow::addDecodeRecord(const QString &wsjtId,
@@ -323,6 +380,7 @@ void MainWindow::addDecodeRecord(const QString &wsjtId,
     }
 
     decodeModel->select();
+    decodeProxyModel->sort(0);
 }
 
 void MainWindow::handleTableClicked(const QModelIndex &index)
@@ -331,7 +389,8 @@ void MainWindow::handleTableClicked(const QModelIndex &index)
         return;
     }
 
-    const QSqlRecord record = decodeModel->record(index.row());
+    const QModelIndex sourceIndex = decodeProxyModel->mapToSource(index);
+    const QSqlRecord record = decodeModel->record(sourceIndex.row());
     const QString band = record.value("band").toString();
     const QString callsign = record.value("callsign").toString();
     if (isLoggedQso(band, callsign)) {
