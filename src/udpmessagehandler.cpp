@@ -62,13 +62,17 @@ QString readUtf8String(QDataStream &stream)
 
 bool isGridToken(const QString &token)
 {
+    if (token.compare(QStringLiteral("RR73"), Qt::CaseInsensitive) == 0) {
+        return false;
+    }
+
     static const QRegularExpression gridPattern(
         QStringLiteral("^[A-R]{2}[0-9]{2}(?:[A-X]{2})?$"),
         QRegularExpression::CaseInsensitiveOption);
     return gridPattern.match(token).hasMatch();
 }
 
-bool isCallsignToken(const QString &token)
+bool isCallsignToken(const QString &token, bool isBracketed = false)
 {
     if (token.isEmpty()) {
         return false;
@@ -86,7 +90,7 @@ bool isCallsignToken(const QString &token)
         return false;
     }
 
-    if (!token.contains('/')) {
+    if (!isBracketed && !token.contains('/')) {
         const int digitIndex = token.indexOf(QRegularExpression(QStringLiteral("[0-9]")));
         if (digitIndex <= 0 || digitIndex == token.size() - 1) {
             return false;
@@ -104,8 +108,10 @@ ParsedDecodeMessage parseDecodedText(const QString &message)
     ParsedDecodeMessage parsed;
     const QStringList tokens = message.simplified().split(' ', Qt::SkipEmptyParts);
     QStringList callsigns;
+    QString bracketedCallsign;
 
     for (const QString &rawToken : tokens) {
+        const bool isBracketed = rawToken.startsWith('<') && rawToken.endsWith('>');
         QString token = rawToken.trimmed();
         token.remove('<');
         token.remove('>');
@@ -115,12 +121,17 @@ ParsedDecodeMessage parseDecodedText(const QString &message)
             continue;
         }
 
-        if (isCallsignToken(token)) {
+        if (isCallsignToken(token, isBracketed)) {
             callsigns.append(token.toUpper());
+            if (bracketedCallsign.isEmpty() && isBracketed) {
+                bracketedCallsign = token.toUpper();
+            }
         }
     }
 
-    if (callsigns.size() >= 2) {
+    if (!bracketedCallsign.isEmpty()) {
+        parsed.callsign = bracketedCallsign;
+    } else if (callsigns.size() >= 2) {
         parsed.callsign = callsigns.at(1);
     } else if (!callsigns.isEmpty()) {
         parsed.callsign = callsigns.first();
@@ -268,8 +279,8 @@ void UdpMessageHandler::parseMessage(QByteArray buffer)
         Q_UNUSED(snr);
         Q_UNUSED(deltaTime);
         Q_UNUSED(deltaFrequency);
+        emit decodeRecordReceived(time, parsed.callsign, parsed.grid, message);
         qDebug().noquote() << time
-                           << mode
                            << parsed.callsign
                            << parsed.grid
                            << message;

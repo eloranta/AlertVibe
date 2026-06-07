@@ -4,6 +4,8 @@
 #include <QObject>
 
 class QUdpSocket;
+class QString;
+class QTime;
 
 class UdpMessageHandler final : public QObject
 {
@@ -11,6 +13,12 @@ class UdpMessageHandler final : public QObject
 
 public:
     explicit UdpMessageHandler(QObject *parent = nullptr);
+
+signals:
+    void decodeRecordReceived(const QTime &time,
+                              const QString &callsign,
+                              const QString &grid,
+                              const QString &message);
 
 private slots:
     void readPendingDatagrams();
