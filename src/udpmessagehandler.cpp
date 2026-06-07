@@ -6,7 +6,9 @@
 #include <QDebug>
 #include <QHostAddress>
 #include <QIODevice>
+#include <QRegularExpression>
 #include <QString>
+#include <QStringList>
 #include <QTime>
 #include <QUdpSocket>
 
@@ -31,6 +33,12 @@ enum MessageType : quint32
     Configure,
 };
 
+struct ParsedDecodeMessage
+{
+    QString callsign;
+    QString grid;
+};
+
 QString readUtf8String(QDataStream &stream)
 {
     quint32 count = 0;
@@ -52,6 +60,74 @@ QString readUtf8String(QDataStream &stream)
     return QString::fromUtf8(bytes);
 }
 
+bool isGridToken(const QString &token)
+{
+    static const QRegularExpression gridPattern(
+        QStringLiteral("^[A-R]{2}[0-9]{2}(?:[A-X]{2})?$"),
+        QRegularExpression::CaseInsensitiveOption);
+    return gridPattern.match(token).hasMatch();
+}
+
+bool isCallsignToken(const QString &token)
+{
+    if (token.isEmpty()) {
+        return false;
+    }
+
+    static const QStringList excludedTokens = {
+        QStringLiteral("CQ"),
+        QStringLiteral("QRZ"),
+        QStringLiteral("DE"),
+        QStringLiteral("RRR"),
+        QStringLiteral("RR73"),
+        QStringLiteral("73"),
+    };
+    if (excludedTokens.contains(token, Qt::CaseInsensitive)) {
+        return false;
+    }
+
+    if (!token.contains('/')) {
+        const int digitIndex = token.indexOf(QRegularExpression(QStringLiteral("[0-9]")));
+        if (digitIndex <= 0 || digitIndex == token.size() - 1) {
+            return false;
+        }
+    }
+
+    static const QRegularExpression callsignPattern(
+        QStringLiteral("^(?:<[A-Z0-9/]+>|[A-Z0-9/]+)$"),
+        QRegularExpression::CaseInsensitiveOption);
+    return callsignPattern.match(token).hasMatch();
+}
+
+ParsedDecodeMessage parseDecodedText(const QString &message)
+{
+    ParsedDecodeMessage parsed;
+    const QStringList tokens = message.simplified().split(' ', Qt::SkipEmptyParts);
+    QStringList callsigns;
+
+    for (const QString &rawToken : tokens) {
+        QString token = rawToken.trimmed();
+        token.remove('<');
+        token.remove('>');
+
+        if (parsed.grid.isEmpty() && isGridToken(token)) {
+            parsed.grid = token.toUpper();
+            continue;
+        }
+
+        if (isCallsignToken(token)) {
+            callsigns.append(token.toUpper());
+        }
+    }
+
+    if (callsigns.size() >= 2) {
+        parsed.callsign = callsigns.at(1);
+    } else if (!callsigns.isEmpty()) {
+        parsed.callsign = callsigns.first();
+    }
+
+    return parsed;
+}
 }
 
 UdpMessageHandler::UdpMessageHandler(QObject *parent)
@@ -185,15 +261,18 @@ void UdpMessageHandler::parseMessage(QByteArray buffer)
         stream >> isNew >> time >> snr >> deltaTime >> deltaFrequency;
         const QString mode = readUtf8String(stream);
         const QString message = readUtf8String(stream);
+        const ParsedDecodeMessage parsed = parseDecodedText(message);
 
         Q_UNUSED(id);
         Q_UNUSED(isNew);
-        Q_UNUSED(time);
         Q_UNUSED(snr);
         Q_UNUSED(deltaTime);
         Q_UNUSED(deltaFrequency);
-        Q_UNUSED(mode);
-        qDebug().noquote() << message;
+        qDebug().noquote() << time
+                           << mode
+                           << parsed.callsign
+                           << parsed.grid
+                           << message;
         break;
     }
     case Clear: {
