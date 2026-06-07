@@ -212,13 +212,6 @@ bool UdpMessageHandler::startQso(const QString &wsjtId,
         return false;
     }
 
-    const QString normalizedMessage = message.simplified().toUpper();
-    if (!(normalizedMessage == "CQ" || normalizedMessage.startsWith("CQ ")
-          || normalizedMessage == "QRZ" || normalizedMessage.startsWith("QRZ "))) {
-        qWarning() << "WSJT-X Reply requires a prior CQ or QRZ decode:" << message;
-        return false;
-    }
-
     QByteArray datagram;
     QDataStream stream(&datagram, QIODevice::WriteOnly);
     stream << quint32(0xadbccbda);
