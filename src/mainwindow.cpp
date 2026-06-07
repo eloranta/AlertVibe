@@ -110,6 +110,12 @@ bool isCqMessage(const QString &message)
     return normalized == "CQ" || normalized.startsWith("CQ ");
 }
 
+bool isFinalMessage(const QString &message)
+{
+    const QString normalized = message.simplified().toUpper();
+    return normalized.endsWith("RR73") || normalized.endsWith(" 73") || normalized == "73";
+}
+
 bool containsMyCall(const QString &message)
 {
     return message.contains("OG3Z", Qt::CaseInsensitive);
@@ -173,6 +179,9 @@ public:
         } else if (isCqMessage(message) && !(paintedOption.state & QStyle::State_Selected)) {
             painter->fillRect(paintedOption.rect, QColor(198, 239, 206));
             paintedOption.backgroundBrush = Qt::NoBrush;
+        } else if (isFinalMessage(message) && !(paintedOption.state & QStyle::State_Selected)) {
+            painter->fillRect(paintedOption.rect, QColor(189, 215, 238));
+            paintedOption.backgroundBrush = Qt::NoBrush;
         }
 
         QStyledItemDelegate::paint(painter, paintedOption, index);
@@ -224,7 +233,7 @@ private:
         const QString message = record.value("message").toString();
 
         if (isLoggedQsoInModel(m_logModel, band, callsign)) {
-            return 3;
+            return 4;
         }
         if (containsMyCall(message)) {
             return 0;
@@ -232,8 +241,11 @@ private:
         if (isCqMessage(message)) {
             return 1;
         }
+        if (isFinalMessage(message)) {
+            return 2;
+        }
 
-        return 2;
+        return 3;
     }
 
     QSqlTableModel *m_logModel = nullptr;
