@@ -254,7 +254,6 @@ void MainWindow::setUpTableViews()
     decodeTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     decodeTableView->setSelectionMode(QAbstractItemView::SingleSelection);
     decodeTableView->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    decodeTableView->setAlternatingRowColors(true);
     decodeTableView->setSortingEnabled(false);
     decodeTableView->verticalHeader()->setVisible(false);
     decodeTableView->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -272,7 +271,6 @@ void MainWindow::setUpTableViews()
     logTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     logTableView->setSelectionMode(QAbstractItemView::SingleSelection);
     logTableView->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    logTableView->setAlternatingRowColors(true);
     logTableView->setSortingEnabled(false);
     logTableView->verticalHeader()->setVisible(false);
     logTableView->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
